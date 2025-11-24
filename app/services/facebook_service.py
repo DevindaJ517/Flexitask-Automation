@@ -22,9 +22,10 @@ class FacebookService:
         """Check if Facebook service is configured"""
         return bool(self.access_token and self.group_id)
     
-    async def post_to_group(self, message: str, job_url: str) -> bool:
+    async def post_to_group(self, message: str) -> dict:
         """
         Post message to Facebook group
+        Message should already contain the apply link.
         
         Requirements:
         1. Create a Facebook App at developers.facebook.com
@@ -34,19 +35,21 @@ class FacebookService:
         
         API Documentation:
         https://developers.facebook.com/docs/graph-api/reference/group/feed
+        
+        Returns:
+            dict: {"success": bool, "post_id": str} or {"success": False, "error": str}
         """
         
         if not self.is_configured():
             logger.warning("Facebook service not configured")
-            return False
+            return {"success": False, "error": "Facebook service not configured"}
         
         try:
             async with httpx.AsyncClient() as client:
                 # Prepare the post data
                 post_data = {
-                    "message": f"{message}\n\n{job_url}",
-                    "access_token": self.access_token,
-                    "link": job_url
+                    "message": message,
+                    "access_token": self.access_token
                 }
                 
                 # Post to Facebook group feed
@@ -58,15 +61,17 @@ class FacebookService:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    logger.info(f"Facebook post successful. Post ID: {result.get('id')}")
-                    return True
+                    post_id = result.get('id', 'unknown')
+                    logger.info(f"Facebook post successful. Post ID: {post_id}")
+                    return {"success": True, "post_id": post_id}
                 else:
-                    logger.error(f"Facebook API error: {response.status_code} - {response.text}")
-                    return False
+                    error_msg = response.text
+                    logger.error(f"Facebook API error: {response.status_code} - {error_msg}")
+                    return {"success": False, "error": f"API error: {error_msg}"}
         
         except Exception as e:
             logger.error(f"Error posting to Facebook: {str(e)}")
-            return False
+            return {"success": False, "error": str(e)}
     
     async def get_group_info(self) -> dict:
         """Get Facebook group information (for testing)"""

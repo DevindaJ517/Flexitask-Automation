@@ -43,8 +43,8 @@ telegram_service = TelegramService()
 async def root():
     """Health check endpoint"""
     return {
-        "status": "online",
-        "service": "Job Posting Automation",
+        "status": "healthy",
+        "service": "Flexitask Social Media Automation",
         "version": "1.0.0"
     }
 
@@ -62,71 +62,119 @@ async def health_check():
     }
 
 
+@app.post("/api/preview-message")
+async def preview_message(job: JobPosting):
+    """
+    Preview what the formatted message will look like
+    Useful for testing message format without posting
+    """
+    try:
+        message = format_job_message(job)
+        return {
+            "success": True,
+            "formatted_message": message
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def post_to_platforms(job: JobPosting):
-    """Post job to all social media platforms"""
+    """Post job to all social media platforms with brief summary and link"""
     
-    # Generate job URL
-    job_url = f"{settings.job_site_url}/jobs/{job.job_id}"
-    
-    # Format message
-    message = format_job_message(job, job_url)
+    # Format brief message with key details and apply link
+    message = format_job_message(job)
     
     results = {}
     
     # Post to WhatsApp
     try:
-        whatsapp_result = await whatsapp_service.send_message(message, job_url)
+        whatsapp_result = await whatsapp_service.send_message(message)
         results["whatsapp"] = whatsapp_result
-        logger.info(f"WhatsApp post successful for job {job.job_id}")
+        logger.info(f"WhatsApp post successful for job: {job.title}")
     except Exception as e:
-        logger.error(f"WhatsApp post failed for job {job.job_id}: {str(e)}")
-        results["whatsapp"] = False
+        logger.error(f"WhatsApp post failed for job {job.title}: {str(e)}")
+        results["whatsapp"] = {"success": False, "error": str(e)}
     
     # Post to Facebook
     try:
-        facebook_result = await facebook_service.post_to_group(message, job_url)
+        facebook_result = await facebook_service.post_to_group(message)
         results["facebook"] = facebook_result
-        logger.info(f"Facebook post successful for job {job.job_id}")
+        logger.info(f"Facebook post successful for job: {job.title}")
     except Exception as e:
-        logger.error(f"Facebook post failed for job {job.job_id}: {str(e)}")
-        results["facebook"] = False
+        logger.error(f"Facebook post failed for job {job.title}: {str(e)}")
+        results["facebook"] = {"success": False, "error": str(e)}
     
     # Post to Telegram
     try:
-        telegram_result = await telegram_service.send_to_channel(message, job_url)
+        telegram_result = await telegram_service.send_to_channel(message)
         results["telegram"] = telegram_result
-        logger.info(f"Telegram post successful for job {job.job_id}")
+        logger.info(f"Telegram post successful for job: {job.title}")
     except Exception as e:
-        logger.error(f"Telegram post failed for job {job.job_id}: {str(e)}")
-        results["telegram"] = False
+        logger.error(f"Telegram post failed for job {job.title}: {str(e)}")
+        results["telegram"] = {"success": False, "error": str(e)}
     
     return results
 
 
-def format_job_message(job: JobPosting, job_url: str) -> str:
-    """Format job posting message"""
-    message = f"""
-🔔 New Job Alert! 🔔
-
-📋 Position: {job.title}
-🏢 Company: {job.company}
-📍 Location: {job.location}
-"""
+def format_job_message(job: JobPosting) -> str:
+    """Format brief job posting message with key details and apply link"""
     
-    if job.job_type:
-        message += f"⏰ Type: {job.job_type}\n"
+    # Map employment types to readable format
+    employment_map = {
+        "FULL_TIME": "Full Time",
+        "PART_TIME": "Part Time",
+        "CONTRACT": "Contract"
+    }
     
-    if job.salary:
-        message += f"💰 Salary: {job.salary}\n"
+    work_location_map = {
+        "ONSITE": "Onsite",
+        "REMOTE": "Remote",
+        "HYBRID": "Hybrid"
+    }
     
-    message += f"\n📝 Description:\n{job.description[:200]}{'...' if len(job.description) > 200 else ''}\n"
-    message += f"\n🔗 Apply Now: {job_url}"
+    experience_map = {
+        "ONE_PLUS": "1+ years",
+        "TWO_PLUS": "2+ years",
+        "FIVE_PLUS": "5+ years"
+    }
+    
+    # Build message with emojis and brief info
+    message = f"🎯 **New Job Opportunity!**\n\n"
+    message += f"**{job.title}**\n"
+    message += f"🏢 {job.companyName}\n\n"
+    
+    # Location info
+    if job.city and job.country:
+        message += f"📍 {job.city}, {job.country}\n"
+    elif job.country:
+        message += f"📍 {job.country}\n"
+    
+    # Employment details
+    employment = employment_map.get(job.employmentType, job.employmentType)
+    work_type = work_location_map.get(job.workLocationType, job.workLocationType)
+    message += f"💼 {employment} | {work_type}\n"
+    
+    # Category
+    if job.category:
+        message += f"🏷️ {job.category}\n"
+    
+    # Experience requirement
+    if job.experienceYears:
+        experience = experience_map.get(job.experienceYears, job.experienceYears)
+        message += f"📊 Experience: {experience}\n"
+    
+    # Internship badge
+    if job.isInternship:
+        message += f"🎓 Internship Position\n"
+    
+    # Apply link
+    message += f"\n🔗 **Apply now:** {job.linkedInApplyURL}"
     
     return message
 
 
 @app.post("/api/post-job", response_model=PostResponse)
-async def post_job(job: JobPosting, background_tasks: BackgroundTasks):
+async def post_job(job: JobPosting):
     """
     Main endpoint to post job to all social media platforms
     
@@ -134,48 +182,25 @@ async def post_job(job: JobPosting, background_tasks: BackgroundTasks):
     - WhatsApp groups
     - Facebook groups
     - Telegram channels
-    """
-    try:
-        logger.info(f"Received job posting request for job ID: {job.job_id}")
-        
-        # Post to platforms in background
-        background_tasks.add_task(post_to_platforms, job)
-        
-        return PostResponse(
-            success=True,
-            message="Job posting is being distributed to social media platforms",
-            job_id=job.job_id,
-            platforms={
-                "whatsapp": True,
-                "facebook": True,
-                "telegram": True
-            }
-        )
     
-    except Exception as e:
-        logger.error(f"Error processing job posting: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/post-job-sync", response_model=PostResponse)
-async def post_job_sync(job: JobPosting):
-    """
-    Synchronous endpoint to post job to all social media platforms
-    Waits for all platforms to complete before responding
+    Only brief summary with key details and apply link is shared.
     """
     try:
-        logger.info(f"Received sync job posting request for job ID: {job.job_id}")
+        logger.info(f"Received job posting request: {job.title} at {job.companyName}")
         
-        # Post to platforms synchronously
+        # Post to platforms synchronously to get results
         results = await post_to_platforms(job)
         
-        success = any(results.values())
+        # Check if at least one platform succeeded
+        success = any(
+            r.get("success", False) if isinstance(r, dict) else r 
+            for r in results.values()
+        )
         
         return PostResponse(
             success=success,
-            message="Job posted to social media platforms" if success else "Failed to post to any platform",
-            job_id=job.job_id,
-            platforms=results
+            message="Job posted successfully to all platforms" if success else "Failed to post to some platforms",
+            results=results
         )
     
     except Exception as e:

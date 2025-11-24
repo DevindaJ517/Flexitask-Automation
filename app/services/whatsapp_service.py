@@ -16,67 +16,61 @@ class WhatsAppService:
     
     def __init__(self):
         self.settings = get_settings()
-        self.api_key = self.settings.whatsapp_api_key
-        self.phone_number = self.settings.whatsapp_phone_number
-        self.group_id = self.settings.whatsapp_group_id
+        self.account_sid = self.settings.twilio_account_sid
+        self.auth_token = self.settings.twilio_auth_token
+        self.whatsapp_from = self.settings.twilio_whatsapp_from
+        self.whatsapp_to = self.settings.whatsapp_group_number
     
     def is_configured(self) -> bool:
         """Check if WhatsApp service is configured"""
-        return bool(self.api_key and self.phone_number and self.group_id)
+        return bool(self.account_sid and self.auth_token and self.whatsapp_from and self.whatsapp_to)
     
-    async def send_message(self, message: str, job_url: str) -> bool:
+    async def send_message(self, message: str) -> dict:
         """
         Send message to WhatsApp group
+        Message should already contain the apply link.
         
-        NOTE: This is a template. You'll need to implement based on your chosen API:
-        
-        Option 1 - Twilio:
-        - Get account SID and auth token from Twilio
-        - Use WhatsApp-enabled Twilio number
+        NOTE: This uses Twilio API. You need to configure:
+        - Get account SID and auth token from Twilio Console
+        - Use WhatsApp-enabled Twilio number (sandbox or approved)
         - API: https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Messages.json
         
-        Option 2 - WhatsApp Business API:
-        - Requires business verification
-        - Use official WhatsApp Business API
-        - More complex setup but official
-        
-        Option 3 - Third-party (360Dialog, MessageBird):
-        - Easier setup
-        - Pay per message
+        Returns:
+            dict: {"success": bool, "message_sid": str} or {"success": False, "error": str}
         """
         
         if not self.is_configured():
             logger.warning("WhatsApp service not configured")
-            return False
+            return {"success": False, "error": "WhatsApp service not configured"}
         
         try:
-            # Example using Twilio (you need to modify based on your API)
+            # Using Twilio API
             async with httpx.AsyncClient() as client:
-                # Format for WhatsApp via Twilio
-                # You'll need to replace this with actual API implementation
+                logger.info(f"Sending WhatsApp message to: {self.whatsapp_to}")
                 
-                logger.info(f"Sending WhatsApp message to group: {self.group_id}")
+                # Twilio API endpoint
+                url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Messages.json"
                 
-                # IMPLEMENTATION NEEDED:
-                # Replace this with actual API call to your chosen WhatsApp service
+                response = await client.post(
+                    url,
+                    auth=(self.account_sid, self.auth_token),
+                    data={
+                        "From": self.whatsapp_from,
+                        "To": self.whatsapp_to,
+                        "Body": message
+                    }
+                )
                 
-                # Example structure (Twilio):
-                # response = await client.post(
-                #     f"https://api.twilio.com/2010-04-01/Accounts/{ACCOUNT_SID}/Messages.json",
-                #     auth=(ACCOUNT_SID, AUTH_TOKEN),
-                #     data={
-                #         "From": f"whatsapp:{self.phone_number}",
-                #         "To": f"whatsapp:{self.group_id}",
-                #         "Body": f"{message}\n\n{job_url}"
-                #     }
-                # )
-                
-                # For now, log the message
-                logger.info(f"WhatsApp message prepared: {message[:100]}...")
-                
-                # Return True to simulate success (replace with actual API response check)
-                return True
+                if response.status_code in [200, 201]:
+                    result = response.json()
+                    message_sid = result.get("sid", "unknown")
+                    logger.info(f"WhatsApp message sent successfully. SID: {message_sid}")
+                    return {"success": True, "message_sid": message_sid}
+                else:
+                    error_msg = response.text
+                    logger.error(f"WhatsApp API error: {response.status_code} - {error_msg}")
+                    return {"success": False, "error": f"API error: {error_msg}"}
         
         except Exception as e:
             logger.error(f"Error sending WhatsApp message: {str(e)}")
-            return False
+            return {"success": False, "error": str(e)}

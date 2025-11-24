@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = False
     
-    # WhatsApp Configuration
-    whatsapp_api_key: str = ""
-    whatsapp_phone_number: str = ""
-    whatsapp_group_id: str = ""
+    # WhatsApp Configuration (Twilio)
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""
+    whatsapp_group_number: str = ""
     
     # Facebook Configuration
     facebook_access_token: str = ""

@@ -1,29 +1,37 @@
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
-from datetime import datetime
 
 
 class JobPosting(BaseModel):
-    """Job posting data model"""
-    job_id: str
+    """Job posting data model with minimal info for social media sharing"""
     title: str
-    company: str
-    location: str
-    description: str
-    salary: Optional[str] = None
-    job_type: Optional[str] = None  # Full-time, Part-time, Contract, etc.
-    posted_at: Optional[datetime] = None
+    companyName: str
+    workLocationType: str  # ONSITE, REMOTE, HYBRID
+    employmentType: str  # FULL_TIME, PART_TIME, CONTRACT
+    linkedInApplyURL: str
+    
+    # Optional fields
+    category: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    experienceYears: Optional[str] = None  # ONE_PLUS, TWO_PLUS, FIVE_PLUS
+    isInternship: Optional[bool] = False
+    uniqueDescription: Optional[str] = None
+    jobImage: Optional[str] = None
     
     class Config:
         json_schema_extra = {
             "example": {
-                "job_id": "12345",
-                "title": "Senior Python Developer",
-                "company": "Tech Corp",
-                "location": "Remote",
-                "description": "We are looking for an experienced Python developer...",
-                "salary": "$100,000 - $150,000",
-                "job_type": "Full-time"
+                "title": "Senior Software Engineer",
+                "companyName": "TechCorp Inc.",
+                "workLocationType": "HYBRID",
+                "employmentType": "FULL_TIME",
+                "category": "IT & Software",
+                "country": "United States",
+                "city": "San Francisco",
+                "experienceYears": "TWO_PLUS",
+                "isInternship": False,
+                "linkedInApplyURL": "https://www.linkedin.com/jobs/view/123456789"
             }
         }
 
@@ -32,5 +40,4 @@ class PostResponse(BaseModel):
     """Response model for job posting"""
     success: bool
     message: str
-    job_id: str
-    platforms: dict[str, bool]  # Status for each platform
+    results: dict  # Detailed results for each platform

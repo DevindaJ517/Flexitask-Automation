@@ -25,9 +25,10 @@ class TelegramService:
         """Check if Telegram service is configured"""
         return bool(self.bot_token and self.channel_id)
     
-    async def send_to_channel(self, message: str, job_url: str) -> bool:
+    async def send_to_channel(self, message: str) -> dict:
         """
         Send message to Telegram channel
+        Message should already contain the apply link.
         
         Requirements:
         1. Create a bot using @BotFather on Telegram
@@ -41,40 +42,32 @@ class TelegramService:
         
         API Documentation:
         https://core.telegram.org/bots/api
+        
+        Returns:
+            dict: {"success": bool, "message_id": int} or {"success": False, "error": str}
         """
         
         if not self.is_configured():
             logger.warning("Telegram service not configured")
-            return False
+            return {"success": False, "error": "Telegram service not configured"}
         
         try:
-            # Format message with Markdown
-            formatted_message = self._format_message_markdown(message, job_url)
-            
             logger.info(f"Sending message to Telegram channel: {self.channel_id}")
             
-            # Send message to channel
-            await self.bot.send_message(
+            # Send message to channel with Markdown formatting
+            sent_message = await self.bot.send_message(
                 chat_id=self.channel_id,
-                text=formatted_message,
+                text=message,
                 parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=False
             )
             
-            logger.info("Telegram message sent successfully")
-            return True
+            logger.info(f"Telegram message sent successfully. Message ID: {sent_message.message_id}")
+            return {"success": True, "message_id": sent_message.message_id}
         
         except Exception as e:
             logger.error(f"Error sending Telegram message: {str(e)}")
-            return False
-    
-    def _format_message_markdown(self, message: str, job_url: str) -> str:
-        """Format message with Telegram Markdown"""
-        # Escape special characters for Markdown
-        # Note: python-telegram-bot handles most escaping automatically
-        
-        formatted = f"{message}\n\n[🔗 Apply Now]({job_url})"
-        return formatted
+            return {"success": False, "error": str(e)}
     
     async def get_channel_info(self) -> dict:
         """Get Telegram channel information (for testing)"""
@@ -94,9 +87,10 @@ class TelegramService:
             logger.error(f"Error getting channel info: {str(e)}")
             return {}
     
-    async def send_photo_with_caption(self, photo_url: str, caption: str, job_url: str) -> bool:
+    async def send_photo_with_caption(self, photo_url: str, caption: str) -> dict:
         """
         Send photo with caption to Telegram channel
+        Caption should already contain the apply link.
         Useful if you want to include company logo or job image
         """
         if not self.is_configured():
