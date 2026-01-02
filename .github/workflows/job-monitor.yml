@@ -31,13 +31,4 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
           JOB_SITE_URL: https://flexi-task-zeta.vercel.app
-        run: python -c "
-import asyncio
-from app.scheduler import check_and_share_new_jobs
-
-async def main():
-    result = await check_and_share_new_jobs()
-    print(f'Result: {result}')
-
-asyncio.run(main())
-"
+        run: python run_check.py
