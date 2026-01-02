@@ -5,11 +5,11 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# HTTP Client
-httpx==0.25.2
+# HTTP Client (version compatible with both telegram and supabase)
+httpx>=0.24.0,<0.25.0
 
-# Telegram
-python-telegram-bot==20.7
+# Telegram (use older version compatible with httpx <0.25)
+python-telegram-bot==20.6
 
 # Supabase
 supabase==2.3.0
