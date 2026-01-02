@@ -1,0 +1,43 @@
+name: FlexiTask Job Monitor
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-and-share-jobs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run job check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          JOB_SITE_URL: https://flexi-task-zeta.vercel.app
+        run: python -c "
+import asyncio
+from app.scheduler import check_and_share_new_jobs
+
+async def main():
+    result = await check_and_share_new_jobs()
+    print(f'Result: {result}')
+
+asyncio.run(main())
+"
