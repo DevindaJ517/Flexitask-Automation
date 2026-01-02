@@ -227,8 +227,20 @@ class TelegramService:
         message = self.format_job_message(job)
         
         if job.jobImageUrl:
+            # Convert Cloudinary path to full URL if needed
+            image_url = job.jobImageUrl
+            if not image_url.startswith(('http://', 'https://')):
+                # It's a Cloudinary path, convert to full URL
+                image_url = f"https://res.cloudinary.com/dqxfwbv1j/image/upload/{job.jobImageUrl}"
+            
             # Send with image
-            return await self.send_photo_with_caption(job.jobImageUrl, message)
+            result = await self.send_photo_with_caption(image_url, message)
+            
+            # If image fails, try sending as text only
+            if not result.get("success"):
+                logger.warning(f"Photo failed, sending as text: {result.get('error')}")
+                return await self.send_to_channel(message)
+            return result
         else:
             # Send text only
             return await self.send_to_channel(message)
