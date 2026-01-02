@@ -78,11 +78,11 @@ class SupabaseService:
         
         try:
             # Build query for published jobs
-            query = self.supabase.table("JobPost").select(
+            query = self.supabase.table("job_posts").select(
                 "*,"
-                "JobCategory:categoryId(id, name, slug),"
-                "Country:countryId(id, name, code),"
-                "City:cityId(id, name, countryId)"
+                "job_categories:categoryId(id, name, slug),"
+                "countries:countryId(id, name, code),"
+                "cities:cityId(id, name, countryId)"
             ).eq("isPublished", True)
             
             # Filter by creation date if specified
@@ -106,16 +106,16 @@ class SupabaseService:
                     
                     # Parse related data
                     category = None
-                    if job_data.get("JobCategory"):
-                        category = JobCategory(**job_data["JobCategory"])
+                    if job_data.get("job_categories"):
+                        category = JobCategory(**job_data["job_categories"])
                     
                     country = None
-                    if job_data.get("Country"):
-                        country = Country(**job_data["Country"])
+                    if job_data.get("countries"):
+                        country = Country(**job_data["countries"])
                     
                     city = None
-                    if job_data.get("City"):
-                        city = City(**job_data["City"])
+                    if job_data.get("cities"):
+                        city = City(**job_data["cities"])
                     
                     # Create JobPosting object
                     job = JobPosting(
@@ -159,11 +159,11 @@ class SupabaseService:
             return None
         
         try:
-            response = self.supabase.table("JobPost").select(
+            response = self.supabase.table("job_posts").select(
                 "*,"
-                "JobCategory:categoryId(id, name, slug),"
-                "Country:countryId(id, name, code),"
-                "City:cityId(id, name, countryId)"
+                "job_categories:categoryId(id, name, slug),"
+                "countries:countryId(id, name, code),"
+                "cities:cityId(id, name, countryId)"
             ).eq("id", job_id).single().execute()
             
             if not response.data:
@@ -173,16 +173,16 @@ class SupabaseService:
             
             # Parse related data
             category = None
-            if job_data.get("JobCategory"):
-                category = JobCategory(**job_data["JobCategory"])
+            if job_data.get("job_categories"):
+                category = JobCategory(**job_data["job_categories"])
             
             country = None
-            if job_data.get("Country"):
-                country = Country(**job_data["Country"])
+            if job_data.get("countries"):
+                country = Country(**job_data["countries"])
             
             city = None
-            if job_data.get("City"):
-                city = City(**job_data["City"])
+            if job_data.get("cities"):
+                city = City(**job_data["cities"])
             
             return JobPosting(
                 id=job_data["id"],
