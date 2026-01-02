@@ -1,11 +1,28 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+"""
+FlexiTask Automation Server
+
+FastAPI application for monitoring FlexiTask job postings and
+automatically sharing them to Telegram.
+
+Features:
+- Real-time job monitoring via Supabase
+- Automatic posting to Telegram channel
+- Background scheduling with APScheduler (free tier compatible)
+- REST API for manual control and monitoring
+"""
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import JobPosting, PostResponse
-from app.config import get_settings
-from app.services.whatsapp_service import WhatsAppService
-from app.services.facebook_service import FacebookService
-from app.services.telegram_service import TelegramService
+from contextlib import asynccontextmanager
+from typing import Optional
+from datetime import datetime, timezone
 import logging
+
+from app.models import JobPosting, PostResponse, JobMonitorStatus
+from app.config import get_settings
+from app.services.supabase_service import SupabaseService
+from app.services.telegram_service import TelegramService
+from app.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, check_and_share_new_jobs
 
 # Configure logging
 logging.basicConfig(
@@ -14,198 +31,341 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Get settings
+settings = get_settings()
+
+# Initialize services
+supabase_service = SupabaseService()
+telegram_service = TelegramService()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup and shutdown"""
+    # Startup
+    logger.info("Starting FlexiTask Automation Server...")
+    logger.info(f"Job site URL: {settings.job_site_url}")
+    logger.info(f"Polling interval: {settings.polling_interval_seconds} seconds")
+    
+    # Log service status
+    logger.info(f"Supabase configured: {supabase_service.is_configured()}")
+    logger.info(f"Telegram configured: {telegram_service.is_configured()}")
+    
+    # Start the background scheduler
+    if supabase_service.is_configured() and telegram_service.is_configured():
+        start_scheduler()
+        logger.info("Background scheduler started")
+    else:
+        logger.warning("Scheduler not started - services not configured")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down FlexiTask Automation Server...")
+    stop_scheduler()
+    await supabase_service.close()
+
+
 # Initialize FastAPI app
 app = FastAPI(
-    title="Job Posting Social Media Automation",
-    description="Microservice for automatically posting jobs to social media platforms",
-    version="1.0.0"
+    title="FlexiTask Automation",
+    description="""
+    Automation service for monitoring FlexiTask job postings and 
+    sharing them to Telegram.
+    
+    ## Features
+    - 🔍 Monitors Supabase database for new job posts
+    - 📱 Posts to Telegram channel
+    - ⚡ Background scheduling with APScheduler
+    - 📊 Tracking and statistics
+    """,
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this based on your needs
+    allow_origins=["*"],  # Configure based on your needs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Get settings
-settings = get_settings()
 
-# Initialize services
-whatsapp_service = WhatsAppService()
-facebook_service = FacebookService()
-telegram_service = TelegramService()
+# ============= Health Check Endpoints =============
 
-
-@app.get("/")
+@app.get("/", tags=["Health"])
 async def root():
-    """Health check endpoint"""
+    """Root endpoint with service info"""
     return {
-        "status": "healthy",
-        "service": "Flexitask Social Media Automation",
-        "version": "1.0.0"
+        "service": "FlexiTask Automation",
+        "version": "2.0.0",
+        "status": "running",
+        "job_site": settings.job_site_url
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
-    """Detailed health check"""
+    """Detailed health check for all services"""
+    stats = await supabase_service.get_stats()
+    
     return {
         "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": {
-            "whatsapp": whatsapp_service.is_configured(),
-            "facebook": facebook_service.is_configured(),
-            "telegram": telegram_service.is_configured()
+            "supabase": {
+                "configured": supabase_service.is_configured(),
+                "stats": stats
+            },
+            "telegram": {
+                "configured": telegram_service.is_configured()
+            }
+        },
+        "configuration": {
+            "polling_interval": settings.polling_interval_seconds,
+            "job_site_url": settings.job_site_url
         }
     }
 
 
-@app.post("/api/preview-message")
-async def preview_message(job: JobPosting):
+# ============= Job Monitoring Endpoints =============
+
+@app.get("/api/jobs/new", tags=["Jobs"])
+async def get_new_jobs(
+    hours: int = Query(default=24, description="Look back period in hours")
+):
     """
-    Preview what the formatted message will look like
-    Useful for testing message format without posting
+    Get list of new jobs that haven't been shared yet
+    
+    Returns jobs created in the last N hours that haven't been posted
+    to Telegram.
     """
-    try:
-        message = format_job_message(job)
-        return {
-            "success": True,
-            "formatted_message": message
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def post_to_platforms(job: JobPosting):
-    """Post job to all social media platforms with brief summary and link"""
-    
-    # Format brief message with key details and apply link
-    message = format_job_message(job)
-    
-    results = {}
-    
-    # Post to WhatsApp
-    try:
-        whatsapp_result = await whatsapp_service.send_message(message)
-        results["whatsapp"] = whatsapp_result
-        logger.info(f"WhatsApp post successful for job: {job.title}")
-    except Exception as e:
-        logger.error(f"WhatsApp post failed for job {job.title}: {str(e)}")
-        results["whatsapp"] = {"success": False, "error": str(e)}
-    
-    # Post to Facebook
-    try:
-        facebook_result = await facebook_service.post_to_group(message)
-        results["facebook"] = facebook_result
-        logger.info(f"Facebook post successful for job: {job.title}")
-    except Exception as e:
-        logger.error(f"Facebook post failed for job {job.title}: {str(e)}")
-        results["facebook"] = {"success": False, "error": str(e)}
-    
-    # Post to Telegram
-    try:
-        telegram_result = await telegram_service.send_to_channel(message)
-        results["telegram"] = telegram_result
-        logger.info(f"Telegram post successful for job: {job.title}")
-    except Exception as e:
-        logger.error(f"Telegram post failed for job {job.title}: {str(e)}")
-        results["telegram"] = {"success": False, "error": str(e)}
-    
-    return results
-
-
-def format_job_message(job: JobPosting) -> str:
-    """Format brief job posting message with key details and apply link"""
-    
-    # Map employment types to readable format
-    employment_map = {
-        "FULL_TIME": "Full Time",
-        "PART_TIME": "Part Time",
-        "CONTRACT": "Contract"
-    }
-    
-    work_location_map = {
-        "ONSITE": "Onsite",
-        "REMOTE": "Remote",
-        "HYBRID": "Hybrid"
-    }
-    
-    experience_map = {
-        "ONE_PLUS": "1+ years",
-        "TWO_PLUS": "2+ years",
-        "FIVE_PLUS": "5+ years"
-    }
-    
-    # Build message with emojis and brief info
-    message = f"🎯 **New Job Opportunity!**\n\n"
-    message += f"**{job.title}**\n"
-    message += f"🏢 {job.companyName}\n\n"
-    
-    # Location info
-    if job.city and job.country:
-        message += f"📍 {job.city}, {job.country}\n"
-    elif job.country:
-        message += f"📍 {job.country}\n"
-    
-    # Employment details
-    employment = employment_map.get(job.employmentType, job.employmentType)
-    work_type = work_location_map.get(job.workLocationType, job.workLocationType)
-    message += f"💼 {employment} | {work_type}\n"
-    
-    # Category
-    if job.category:
-        message += f"🏷️ {job.category}\n"
-    
-    # Experience requirement
-    if job.experienceYears:
-        experience = experience_map.get(job.experienceYears, job.experienceYears)
-        message += f"📊 Experience: {experience}\n"
-    
-    # Internship badge
-    if job.isInternship:
-        message += f"🎓 Internship Position\n"
-    
-    # Apply link
-    message += f"\n🔗 **Apply now:** {job.linkedInApplyURL}"
-    
-    return message
-
-
-@app.post("/api/post-job", response_model=PostResponse)
-async def post_job(job: JobPosting):
-    """
-    Main endpoint to post job to all social media platforms
-    
-    This endpoint receives job posting data and automatically posts it to:
-    - WhatsApp groups
-    - Facebook groups
-    - Telegram channels
-    
-    Only brief summary with key details and apply link is shared.
-    """
-    try:
-        logger.info(f"Received job posting request: {job.title} at {job.companyName}")
-        
-        # Post to platforms synchronously to get results
-        results = await post_to_platforms(job)
-        
-        # Check if at least one platform succeeded
-        success = any(
-            r.get("success", False) if isinstance(r, dict) else r 
-            for r in results.values()
-        )
-        
-        return PostResponse(
-            success=success,
-            message="Job posted successfully to all platforms" if success else "Failed to post to some platforms",
-            results=results
+    if not supabase_service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase service not configured"
         )
     
+    from datetime import timedelta
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    
+    jobs = await supabase_service.get_new_published_jobs(since=since)
+    
+    return {
+        "count": len(jobs),
+        "since": since.isoformat(),
+        "jobs": [
+            {
+                "id": job.id,
+                "title": job.title,
+                "company": job.companyName,
+                "slug": job.slug,
+                "created_at": job.createdAt.isoformat() if job.createdAt else None
+            }
+            for job in jobs
+        ]
+    }
+
+
+@app.get("/api/jobs/{job_id}", tags=["Jobs"])
+async def get_job(job_id: str):
+    """Get details of a specific job"""
+    if not supabase_service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase service not configured"
+        )
+    
+    job = await supabase_service.get_job_by_id(job_id)
+    
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job {job_id} not found"
+        )
+    
+    # Get sharing info
+    shared_info = await supabase_service.get_shared_job_info(job_id)
+    
+    return {
+        "job": job.model_dump(),
+        "shared": shared_info
+    }
+
+
+@app.get("/api/jobs/shared/recent", tags=["Jobs"])
+async def get_recently_shared_jobs(
+    limit: int = Query(default=50, le=100, description="Maximum number of jobs to return")
+):
+    """Get list of recently shared jobs"""
+    jobs = await supabase_service.get_recently_shared_jobs(limit=limit)
+    
+    return {
+        "count": len(jobs),
+        "jobs": jobs
+    }
+
+
+# ============= Manual Posting Endpoints =============
+
+# ============= Scheduler Endpoints =============
+
+@app.get("/api/scheduler/status", tags=["Scheduler"])
+async def scheduler_status():
+    """Get current scheduler status"""
+    return get_scheduler_status()
+
+
+@app.post("/api/scheduler/trigger", tags=["Scheduler"])
+async def trigger_manual_check():
+    """
+    Manually trigger a job check
+    
+    This runs the job check immediately, outside of the schedule.
+    """
+    result = await check_and_share_new_jobs()
+    return result
+
+
+@app.post("/api/share/{job_id}", response_model=PostResponse, tags=["Sharing"])
+async def share_job(job_id: str):
+    """
+    Manually trigger sharing for a specific job to Telegram
+    
+    Use this to manually share a job to Telegram.
+    """
+    if not supabase_service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase service not configured"
+        )
+    
+    # Fetch job
+    job = await supabase_service.get_job_by_id(job_id)
+    
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job {job_id} not found"
+        )
+    
+    if not job.isPublished:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot share unpublished job"
+        )
+    
+    # Share to Telegram
+    result = await post_to_telegram(job)
+    
+    # Mark as shared
+    success = result.get("success", False)
+    
+    if success:
+        await supabase_service.mark_job_as_shared(
+            job_id=job.id,
+            telegram_shared=True,
+            telegram_message_id=result.get("message_id")
+        )
+    
+    return PostResponse(
+        success=success,
+        message="Job shared to Telegram successfully" if success else "Failed to share job",
+        results={"telegram": result}
+    )
+
+
+@app.post("/api/share/trigger-check", tags=["Sharing"])
+async def trigger_job_check(background_tasks: BackgroundTasks):
+    """
+    Manually trigger a check for new jobs
+    
+    This will check for new jobs and share them in the background.
+    Useful for testing or forcing an immediate check.
+    """
+    background_tasks.add_task(check_and_share_jobs_background)
+    
+    return {
+        "message": "Job check triggered",
+        "status": "processing"
+    }
+
+
+async def check_and_share_jobs_background():
+    """Background task to check and share new jobs"""
+    try:
+        from datetime import timedelta
+        
+        last_check = await supabase_service.get_last_check_timestamp()
+        if last_check is None:
+            last_check = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        jobs = await supabase_service.get_new_published_jobs(since=last_check)
+        
+        for job in jobs:
+            result = await post_to_telegram(job)
+            if result.get("success"):
+                await supabase_service.mark_job_as_shared(
+                    job_id=job.id,
+                    telegram_shared=True,
+                    telegram_message_id=result.get("message_id")
+                )
+        
+        await supabase_service.set_last_check_timestamp()
+        
+        logger.info(f"Background check completed. Processed {len(jobs)} jobs.")
+        
     except Exception as e:
-        logger.error(f"Error processing job posting: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in background job check: {e}")
+
+
+async def post_to_telegram(job: JobPosting) -> dict:
+    """Post job to Telegram"""
+    
+    if not telegram_service.is_configured():
+        return {"success": False, "error": "Telegram not configured"}
+    
+    try:
+        result = await telegram_service.post_job(job)
+        logger.info(f"Telegram post {'successful' if result.get('success') else 'failed'} for: {job.title}")
+        return result
+    except Exception as e:
+        logger.error(f"Telegram post failed for {job.title}: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
+# ============= Preview Endpoints =============
+
+@app.post("/api/preview/telegram", tags=["Preview"])
+async def preview_telegram_message(job_id: str):
+    """Preview what the Telegram message will look like"""
+    job = await supabase_service.get_job_by_id(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    message = telegram_service.format_job_message(job)
+    
+    return {
+        "platform": "telegram",
+        "job_id": job_id,
+        "formatted_message": message
+    }
+
+
+# ============= Statistics Endpoints =============
+
+@app.get("/api/stats", tags=["Statistics"])
+async def get_statistics():
+    """Get sharing statistics"""
+    stats = await supabase_service.get_stats()
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **stats
+    }
 
 
 if __name__ == "__main__":

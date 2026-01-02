@@ -1,0 +1,30 @@
+# Render.com deployment configuration
+# This file configures the service for Render's free tier
+
+services:
+  - type: web
+    name: flexitask-automation
+    runtime: python
+    region: oregon  # or singapore, frankfurt for lower latency
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SUPABASE_URL
+        sync: false  # Set in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false  # Set in Render dashboard
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false  # Set in Render dashboard
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false  # Set in Render dashboard
+      - key: REDIS_URL
+        sync: false  # Use Upstash Redis URL
+      - key: JOB_SITE_URL
+        value: https://flexi-task-zeta.vercel.app
+      - key: POLLING_INTERVAL_SECONDS
+        value: 60
+    healthCheckPath: /health
+    autoDeploy: true

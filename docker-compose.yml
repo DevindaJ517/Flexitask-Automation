@@ -1,8 +1,8 @@
 version: '3.8'
 
 services:
-  # Social Media Automation Service
-  automation-service:
+  # FastAPI Application with APScheduler
+  api:
     build: .
     container_name: flexitask-automation
     ports:
@@ -21,8 +21,9 @@ services:
       - automation-network
     volumes:
       - ./logs:/app/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-  # Redis for caching and task queue (optional but recommended)
+  # Redis for job tracking and caching
   redis:
     image: redis:7-alpine
     container_name: flexitask-redis

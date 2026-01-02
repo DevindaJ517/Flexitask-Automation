@@ -10,15 +10,9 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = False
     
-    # WhatsApp Configuration (Twilio)
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_whatsapp_from: str = ""
-    whatsapp_group_number: str = ""
-    
-    # Facebook Configuration
-    facebook_access_token: str = ""
-    facebook_group_id: str = ""
+    # Supabase Configuration
+    supabase_url: str = ""
+    supabase_key: str = ""  # Service role key for server-side access
     
     # Telegram Configuration
     telegram_bot_token: str = ""
@@ -28,7 +22,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     
     # Job Site Configuration
-    job_site_url: str = "https://yourjobsite.com"
+    job_site_url: str = "https://flexi-task-zeta.vercel.app"
+    
+    # Polling Configuration
+    polling_interval_seconds: int = 60  # How often to check for new jobs
     
     class Config:
         env_file = ".env"

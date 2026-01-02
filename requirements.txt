@@ -1,9 +1,21 @@
+# FastAPI and Server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 pydantic==2.5.0
-requests==2.31.0
-python-telegram-bot==20.7
+pydantic-settings==2.1.0
+
+# HTTP Client
 httpx==0.25.2
-celery==5.3.4
+
+# Telegram
+python-telegram-bot==20.7
+
+# Supabase
+supabase==2.3.0
+
+# Redis (for job tracking)
 redis==5.0.1
+
+# Scheduler (replaces Celery for free deployment)
+apscheduler==3.10.4
