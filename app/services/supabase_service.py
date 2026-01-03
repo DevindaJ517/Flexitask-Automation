@@ -401,8 +401,18 @@ class SupabaseService:
             }
             
         except Exception as e:
-            logger.error(f"Error deleting old jobs: {e}")
-            return {"success": False, "error": str(e), "deleted_count": 0}
+            error_msg = str(e)
+            logger.error(f"Error deleting old jobs: {error_msg}")
+            
+            # Check for permission error and provide helpful message
+            if "permission denied" in error_msg.lower() or "42501" in error_msg:
+                return {
+                    "success": False, 
+                    "error": "Permission denied - DELETE not allowed on job_posts table. Please update Supabase RLS policies or use a service role key.",
+                    "deleted_count": 0
+                }
+            
+            return {"success": False, "error": error_msg, "deleted_count": 0}
 
     async def close(self):
         """Close connections"""

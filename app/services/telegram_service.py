@@ -80,8 +80,8 @@ class TelegramService:
         location = ", ".join(location_parts) if location_parts else "Location not specified"
         
         # Get readable types
-        employment = employment_map.get(job.employmentType.value, job.employmentType.value)
-        work_type = work_location_map.get(job.workLocationType.value, job.workLocationType.value)
+        employment = self._escape_markdown(employment_map.get(job.employmentType.value, job.employmentType.value))
+        work_type = self._escape_markdown(work_location_map.get(job.workLocationType.value, job.workLocationType.value))
         
         # Build message with Telegram Markdown formatting
         message = f"🚀 *New Job Alert\\!*\n\n"
@@ -102,7 +102,7 @@ class TelegramService:
         
         # Add experience requirement
         if job.experienceYears:
-            experience = experience_map.get(job.experienceYears.value, job.experienceYears.value)
+            experience = self._escape_markdown(experience_map.get(job.experienceYears.value, job.experienceYears.value))
             message += f"📊 Experience: {experience}\n"
         
         # Add internship badge if applicable
