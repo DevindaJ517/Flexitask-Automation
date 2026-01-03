@@ -230,8 +230,12 @@ class TelegramService:
             # Convert Cloudinary path to full URL if needed
             image_url = job.jobImageUrl
             if not image_url.startswith(('http://', 'https://')):
-                # It's a Cloudinary path, convert to full URL
-                image_url = f"https://res.cloudinary.com/dqxfwbv1j/image/upload/{job.jobImageUrl}"
+                # It's a Cloudinary path, convert to full URL with auto format
+                # Adding f_auto,q_auto for format detection and .jpg extension for Telegram compatibility
+                image_url = f"https://res.cloudinary.com/dqxfwbv1j/image/upload/f_auto,q_auto/{job.jobImageUrl}.jpg"
+            elif 'cloudinary.com' in image_url and not any(image_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                # Cloudinary URL without extension - add .jpg for Telegram
+                image_url = f"{image_url}.jpg"
             
             # Send with image
             result = await self.send_photo_with_caption(image_url, message)
