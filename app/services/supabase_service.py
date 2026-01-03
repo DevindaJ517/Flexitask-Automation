@@ -8,7 +8,7 @@ This service connects to the FlexiTask Supabase database to:
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 import redis.asyncio as redis
@@ -346,6 +346,64 @@ class SupabaseService:
                 "error": str(e)
             }
     
+    async def delete_old_jobs(self, days: int = 30) -> Dict[str, Any]:
+        """
+        Delete jobs older than specified days from the database
+        
+        Args:
+            days: Number of days after which jobs should be deleted (default: 30)
+            
+        Returns:
+            Dict with deletion results including count of deleted jobs
+        """
+        if not self.is_configured():
+            logger.warning("Supabase service not configured")
+            return {"success": False, "error": "Supabase not configured", "deleted_count": 0}
+        
+        try:
+            # Calculate cutoff date
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            
+            # First, get the count of jobs to be deleted
+            count_response = self.supabase.table("job_posts").select(
+                "id", count="exact"
+            ).lt("createdAt", cutoff_date.isoformat()).execute()
+            
+            jobs_to_delete = count_response.count if count_response.count else 0
+            
+            if jobs_to_delete == 0:
+                logger.info(f"No jobs older than {days} days found")
+                return {"success": True, "deleted_count": 0, "message": "No old jobs to delete"}
+            
+            # Delete jobs older than cutoff date
+            delete_response = self.supabase.table("job_posts").delete().lt(
+                "createdAt", cutoff_date.isoformat()
+            ).execute()
+            
+            deleted_count = len(delete_response.data) if delete_response.data else jobs_to_delete
+            
+            logger.info(f"Deleted {deleted_count} jobs older than {days} days")
+            
+            # Also clean up Redis entries for deleted jobs
+            if delete_response.data:
+                redis_client = await self._get_redis()
+                for job in delete_response.data:
+                    job_id = job.get("id")
+                    if job_id:
+                        await redis_client.delete(f"shared_job:{job_id}")
+                        await redis_client.zrem("shared_jobs_timeline", job_id)
+            
+            return {
+                "success": True,
+                "deleted_count": deleted_count,
+                "cutoff_date": cutoff_date.isoformat(),
+                "message": f"Successfully deleted {deleted_count} jobs older than {days} days"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error deleting old jobs: {e}")
+            return {"success": False, "error": str(e), "deleted_count": 0}
+
     async def close(self):
         """Close connections"""
         if self.redis:

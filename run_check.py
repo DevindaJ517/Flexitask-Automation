@@ -98,6 +98,22 @@ async def main():
             import traceback
             traceback.print_exc()
     
+    # Cleanup: Delete jobs older than 30 days
+    print("\n" + "=" * 60)
+    print("Cleanup: Removing jobs older than 30 days...")
+    cleanup_result = await supabase_service.delete_old_jobs(days=30)
+    
+    if cleanup_result["success"]:
+        if cleanup_result["deleted_count"] > 0:
+            print(f"  ✅ Deleted {cleanup_result['deleted_count']} old jobs")
+            print(f"  Cutoff date: {cleanup_result.get('cutoff_date', 'N/A')}")
+        else:
+            print("  ℹ️  No old jobs to delete")
+    else:
+        print(f"  ❌ Cleanup failed: {cleanup_result.get('error', 'Unknown error')}")
+    
+    print("=" * 60)
+    
     await supabase_service.close()
     print("\n✅ Job check completed!")
 
